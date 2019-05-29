@@ -18,14 +18,14 @@ defmodule Harald.HCI do
 
   See `t:opcode/0`
   """
-  @type ogf :: 0..63
+  @type ogf :: non_neg_integer()
 
   @typedoc """
   OpCode Command Field.
 
   See `t:opcode/0`
   """
-  @type ocf :: 0..1023
+  @type ocf :: non_neg_integer()
 
   @typedoc """
   > Each command is assigned a 2 byte Opcode used to uniquely identify different types of
@@ -47,6 +47,13 @@ defmodule Harald.HCI do
   def opcode(ogf, ocf) do
     <<opcode::size(16)>> = <<ogf::size(6), ocf::size(10)>>
     <<opcode::little-size(16)>>
+  end
+
+  def opcode(<<opcode::little-size(16)>>) do
+    case <<opcode::size(16)>> do
+      <<ogf::size(6), ocf::size(10)>> -> {:ok, {ogf, ocf}}
+      _ -> :error
+    end
   end
 
   @spec command(opcode(), opts()) :: command()
