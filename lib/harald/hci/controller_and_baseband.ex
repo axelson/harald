@@ -1,4 +1,4 @@
-defmodule Harald.HCI.ControllerAndBaseband do
+defmodule Harald.HCI.Command.ControllerAndBaseband do
   @moduledoc """
   HCI commands for working with the controller and baseband.
 
@@ -7,20 +7,11 @@ defmodule Harald.HCI.ControllerAndBaseband do
   > capabilities of the Link Manager and Baseband in the BR/EDR Controller, the PAL in an AMP
   > Controller, and the Link Layer in an LE Controller. The Host can use these commands to modify
   > the behavior of the local Controller.
-  Bluetooth Spec v5
+
+  Reference: Version 5.0, Vol 2, Part E, 7.3
   """
 
   alias Harald.HCI
 
-  @ogf 0x03
-
-  @doc """
-  > The Read_Local_Name command provides the ability to read the stored user-friendly name for
-  > the BR/EDR Controller. See Section 6.23.
-
-      iex> read_local_name()
-      <<1, 20, 12, 0>>
-  """
-  @spec read_local_name :: HCI.command()
-  def read_local_name, do: @ogf |> HCI.opcode(0x0014) |> HCI.command()
+  def command(ocf, parameters), do: HCI.command(0x03, ocf, parameters)
 end

@@ -7,6 +7,7 @@ defmodule Harald.HCI do
   """
 
   alias Harald.{HCI.Event, Serializable}
+  require Harald.Spec, as: Spec
 
   @behaviour Serializable
 
@@ -40,7 +41,6 @@ defmodule Harald.HCI do
   @type opcode :: binary()
 
   @type opt :: boolean() | binary()
-
   @type opts :: binary() | [opt()]
 
   @spec opcode(ogf(), ocf()) :: opcode()
@@ -56,54 +56,5 @@ defmodule Harald.HCI do
     end
   end
 
-  @spec command(opcode(), opts()) :: command()
-  def command(opcode, opts \\ <<>>)
-
-  def command(opcode, [_ | _] = opts) do
-    opts_bin = for o <- opts, into: <<>>, do: to_bin(o)
-    command(opcode, opts_bin)
-  end
-
-  def command(opcode, opts) do
-    size = byte_size(opts)
-    <<1, opcode::binary, size, opts::binary>>
-  end
-
-  @doc """
-  Convert a value to a binary.
-
-      iex> to_bin(false)
-      <<0>>
-
-      iex> to_bin(true)
-      <<1>>
-
-      iex> to_bin(<<1, 2, 3>>)
-      <<1, 2, 3>>
-  """
-  @spec to_bin(boolean() | binary()) :: binary()
-  def to_bin(false), do: <<0>>
-
-  def to_bin(true), do: <<1>>
-
-  def to_bin(bin) when is_binary(bin), do: bin
-
-  @impl Serializable
-  for module <- Event.event_modules() do
-    def serialize(%unquote(module){} = event) do
-      {:ok, bin} = Event.serialize(event)
-      {:ok, <<Event.indicator(), bin::binary>>}
-    end
-  end
-
-  @impl Serializable
-  def deserialize(<<4, rest::binary>>) do
-    case Event.deserialize(rest) do
-      {:ok, _} = ret -> ret
-      {:error, bin} when is_binary(bin) -> {:error, <<4, bin::binary>>}
-      {:error, data} -> {:error, data}
-    end
-  end
-
-  def deserialize(bin), do: {:error, bin}
+  Spec.define_serializers()
 end

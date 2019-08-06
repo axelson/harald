@@ -45,12 +45,22 @@ defmodule Harald.LE do
 
   @impl GenServer
   def handle_call({:scan, ns, timeout}, from, %{from: nil} = state) do
-    :ok = Transport.send_binary(ns, LEController.set_enable_scan(true, true))
+    :ok =
+      Transport.send_binary(
+        ns,
+        LEController.command(:hci_le_set_scan_enable, %{
+          le_scan_enable: true,
+          filter_duplicates: true
+        })
+      )
+
     Process.send_after(self(), {:stop_scan, ns, from}, timeout)
     {:noreply, %{state | from: from}}
   catch
     :exit, {:timeout, _} -> {:reply, {:error, :timeout}, state}
   end
+
+  def handle_call({:scan, _, _}, _, state), do: {:reply, {:error, :busy}, state}
 
   @impl GenServer
   def handle_info(
@@ -81,12 +91,18 @@ defmodule Harald.LE do
   def handle_info({ref, :ok}, state) when is_reference(ref), do: {:noreply, state}
 
   def handle_info({:stop_scan, ns, from}, %State{devices: devices}) do
-    :ok = Transport.send_binary(ns, LEController.set_enable_scan(false))
+    :ok =
+      Transport.send_binary(
+        ns,
+        LEController.command(
+          :hci_le_set_scan_enable,
+          %{le_scan_enable: false, filter_duplicates: false}
+        )
+      )
+
     GenServer.reply(from, devices)
     {:noreply, %State{}}
   end
-
-  def handle_call({:scan, _, _}, _, state), do: {:reply, {:error, :busy}, state}
 
   defp name(namespace), do: String.to_atom("#{namespace}.#{__MODULE__}")
 

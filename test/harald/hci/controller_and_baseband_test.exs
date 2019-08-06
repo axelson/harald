@@ -1,6 +1,6 @@
-defmodule Harald.HCI.ControllerAndBasebandTest do
+defmodule Harald.HCI.Command.ControllerAndBasebandTest do
   use ExUnit.Case, async: true
-  alias Harald.HCI.ControllerAndBaseband
+  alias Harald.HCI.Command.ControllerAndBaseband
 
   doctest ControllerAndBaseband, import: true
 end

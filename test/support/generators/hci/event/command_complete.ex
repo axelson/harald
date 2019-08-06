@@ -8,9 +8,11 @@ defmodule Harald.Generators.HCI.Event.CommandComplete do
   use ExUnitProperties
 
   def parameters do
-    gen all packets <- StreamData.binary(length: 1),
-            opcode <- StreamData.binary(length: 2),
-            data <- StreamData.binary() do
+    gen all(
+          packets <- StreamData.binary(length: 1),
+          opcode <- StreamData.binary(length: 2),
+          data <- StreamData.binary()
+        ) do
       <<packets::binary, opcode::binary, data::binary>>
     end
   end

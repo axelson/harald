@@ -4,17 +4,7 @@ defmodule Harald.Generators.HCI do
   """
 
   use ExUnitProperties
-  alias Harald.Generators.HCI.Event, as: EventGen
-  alias Harald.HCI.Packet
+  require Harald.Spec, as: Spec
 
-  @spec packet :: no_return()
-  def packet do
-    gen all {type, indicator} <- StreamData.member_of(Packet.types()),
-            binary <- packet(type) do
-      <<indicator, binary::binary>>
-    end
-  end
-
-  @spec packet(:event) :: no_return()
-  def packet(:event), do: EventGen.binary()
+  Spec.define_generators()
 end

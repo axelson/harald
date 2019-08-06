@@ -1,14 +1,16 @@
-# v[VERSION]
+# v0.3.0
 
 ## Breaking Changes
 
   - `ManufacturerDataBehaviour`
     - renamed to `Harald.DataType.ManufacturerDataBehaviour`
   - `Hci`
-    - `t::command/0` updated
     - `opcode/2` no longer guards its parameters
     - `command/{1,2}`'s return is prefixed with the command packet indicator
       `<<1>>`
+    - `t::command/0` updated
+    - `t::ogf/0` updated
+    - `t::ocf/0` updated
   - `ControllerAndBaseband`
     - `read_local_name/0`'s return is prefixed with a command packet indicator
   - `LeController`
@@ -32,7 +34,11 @@
 ## Enhancements
 
   - documentation improvements
+  - `Command`
+    - added.
   - `Hci`
+    - `opcode/1` added to return `{:ok, {ogf(), ocf()}} | :error` given a
+      `binary()`
     - `t::event/0` added
   - `Le`
     - `scan/{1,2}` no longer crashes when the transport times out
