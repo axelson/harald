@@ -2,67 +2,91 @@ defmodule Harald.Spec.Helpers do
   @moduledoc false
 
   use ExUnitProperties
-  alias Harald.Spec
 
   @doc false
   def define_generators(processed_spec) do
-    Enum.reduce(Spec.get(), [], fn
-      {:packets, _}, acc ->
-        acc
+    %{ast: core_ast, commands: commands, events: events} =
+      Enum.reduce(processed_spec, %{ast: [], commands: [], events: []}, fn
+        {:packets, _}, acc ->
+          acc
 
-      {key, value}, acc when key in [:commands, :events] ->
-        Enum.reduce(value, acc, fn
-          %{
-            bin_pieces: bin_pieces,
-            gen_body: gen_body,
-            gen_clauses: gen_clauses,
-            keys: keys,
-            parameters: parameters,
-            name: name,
-            size: size
-          },
-          acc ->
-            ast =
-              quote location: :keep do
-                def generate(unquote(name)) do
-                  gen all(unquote_splicing(gen_clauses)) do
-                    unquote(gen_body)
+        {key, value}, acc when key in [:commands, :events] ->
+          Enum.reduce(value, acc, fn
+            %{
+              gen_body: gen_body,
+              gen_clauses: gen_clauses,
+              name: name
+            },
+            acc ->
+              ast =
+                quote do
+                  def generate(unquote(name)) do
+                    gen all(unquote_splicing(gen_clauses)) do
+                      unquote(gen_body)
+                    end
                   end
                 end
-              end
 
-            acc ++ [ast]
-        end)
-    end)
+              %{
+                acc
+                | :ast => acc.ast ++ [ast],
+                  key => [name | acc[key]]
+              }
+          end)
+      end)
+
+    extra_ast = [
+      quote do
+        def generate(:command) do
+          gen all(
+                command <- StreamData.member_of(unquote(commands)),
+                bin <- generate(command)
+              ) do
+            bin
+          end
+        end
+
+        def generate(:event) do
+          gen all(
+                event <- StreamData.member_of(unquote(events)),
+                bin <- generate(event)
+              ) do
+            bin
+          end
+        end
+      end
+    ]
+
+    core_ast ++ extra_ast
   end
 
   @doc false
   def define_serializers(processed_spec) do
-    Enum.reduce(Spec.get(), [], fn
+    Enum.reduce(processed_spec, [], fn
       {:packets, _}, acc ->
         acc
 
       {key, value}, acc when key in [:commands, :events] ->
         Enum.reduce(value, acc, fn
           %{
-            bin_pieces: bin_pieces,
-            gen_body: gen_body,
-            gen_clauses: gen_clauses,
-            keys: keys,
-            parameters: parameters,
-            name: name,
-            size: size
+            bin_body: bin_body,
+            bin_pattern: bin_pattern,
+            parameters: parameters
           },
           acc ->
             ast =
-              quote location: :keep do
+              quote generated: true do
                 def serialize(unquote(parameters)) do
-                  {:ok, unquote(bin_pieces)}
+                  {:ok, unquote(bin_body)}
                 end
 
-                def deserialize(unquote(bin_pieces)) do
+                def serialize(x), do: {:error, x}
+
+                def deserialize(unquote(bin_pattern)) do
                   {:ok, unquote(parameters)}
                 end
+
+                def deserialize(x), do: {:error, x}
               end
 
             acc ++ [ast]
@@ -84,47 +108,58 @@ defmodule Harald.Spec.Helpers do
     end)
   end
 
-  defp process_command_groups(commands) do
-    Enum.reduce(commands, [], fn {ogf, commands}, acc ->
-      Enum.reduce(commands, acc, fn command, acc ->
-        processed_parameters = process_parameters(command.parameters)
-
-        gen_clause = {:<-, [], [{:ocf, [], Elixir}], quote(do: StreamData.constant(command.ocf))}
-        command_name = command.command
-        keys = [{:command, command_name} | processed_parameters.keys]
-        <<opcode::size(16)>> = <<ogf::size(6), command.ocf::size(10)>>
-        opcode = <<opcode::little-size(16)>>
-
-        gen_body =
-          {:<<>>, [], [1, opcode, processed_parameters.size | processed_parameters.gen_body]}
-
-        bin_pieces = [1, opcode, processed_parameters.size | processed_parameters.bin_pieces]
-
-        [
-          %{
-            processed_parameters
-            | bin_pieces: {:<<>>, [], processed_parameters.bin_pieces},
-              keys: keys,
-              name: command_name,
-              parameters: {:%{}, [], keys},
-              gen_body: gen_body,
-              gen_clauses: [gen_clause | processed_parameters.gen_clauses]
-          }
-          | acc
-        ]
-      end)
+  defp process_command_groups(command_groups) do
+    Enum.reduce(command_groups, [], fn {ogf, commands}, acc ->
+      acc ++ process_commands(ogf, commands)
     end)
+  end
 
-    []
+  defp process_commands(ogf, commands) do
+    Enum.reduce(commands, [], fn command, acc -> [process_command(ogf, command) | acc] end)
+  end
+
+  defp process_command(ogf, command) do
+    processed_parameters = process_parameters(command.parameters)
+
+    gen_clause =
+      {:<-, [], [{:ocf, [], Elixir}, quote(do: StreamData.constant(unquote(command.ocf)))]}
+
+    command_name = command.command
+    keys = [{:command, command_name} | processed_parameters.keys]
+    <<opcode::size(16)>> = <<ogf::size(6), command.ocf::size(10)>>
+    opcode = <<opcode::little-size(16)>>
+
+    gen_body =
+      {:<<>>, [], [1, opcode, div(processed_parameters.size, 8) | processed_parameters.gen_body]}
+
+    bin_body =
+      {:<<>>, [],
+       [
+         1,
+         opcode,
+         div(processed_parameters.size, 8) | processed_parameters.bin_pieces
+       ]}
+
+    bin_pattern = {:<<>>, [], [1, opcode, {:size, [], Elixir} | processed_parameters.bin_pieces]}
+
+    Map.merge(
+      Map.drop(processed_parameters, [:bin_pieces]),
+      %{
+        bin_body: bin_body,
+        bin_pattern: bin_pattern,
+        keys: keys,
+        name: command_name,
+        parameters: {:%{}, [], keys},
+        gen_body: gen_body,
+        gen_clauses: [gen_clause | processed_parameters.gen_clauses]
+      }
+    )
   end
 
   defp process_events(events) do
-    Enum.reduce(events, {[], []}, fn
-      %{subevents: subevents}, acc ->
-        Enum.reduce(subevents, acc, fn event, acc -> [process_event(event) | acc] end)
-
-      event, acc ->
-        [process_event(event) | acc]
+    Enum.reduce(events, [], fn
+      %{subevents: subevents}, acc -> process_events(subevents) ++ acc
+      event, acc -> [process_event(event) | acc]
     end)
   end
 
@@ -133,25 +168,34 @@ defmodule Harald.Spec.Helpers do
     event_code = event_code(event)
 
     gen_clause =
-      {:<-, [], [{:event_code, [], Elixir}], quote(do: StreamData.constant(event_code))}
+      {:<-, [], [{:event_code, [], Elixir}, quote(do: StreamData.constant(unquote(event_code)))]}
 
     event_name = event.event
     keys = [{:event, event_name} | processed_parameters.keys]
 
     gen_body =
-      {:<<>>, [], [4, event_code, processed_parameters.size | processed_parameters.gen_body]}
+      {:<<>>, [],
+       [4, event_code, div(processed_parameters.size, 8) | processed_parameters.gen_body]}
 
-    bin_pieces = [4, event_code, processed_parameters.size | processed_parameters.bin_pieces]
+    bin_body =
+      {:<<>>, [],
+       [4, event_code, div(processed_parameters.size, 8) | processed_parameters.bin_pieces]}
 
-    %{
-      processed_parameters
-      | bin_pieces: {:<<>>, [], processed_parameters.bin_pieces},
+    bin_pattern =
+      {:<<>>, [], [4, event_code, {:size, [], Elixir} | processed_parameters.bin_pieces]}
+
+    Map.merge(
+      Map.drop(processed_parameters, [:bin_pieces]),
+      %{
+        bin_body: bin_body,
+        bin_pattern: bin_pattern,
         keys: keys,
         name: event_name,
         parameters: {:%{}, [], keys},
         gen_body: gen_body,
         gen_clauses: [gen_clause | processed_parameters.gen_clauses]
-    }
+      }
+    )
   end
 
   defp event_code(%{event_code: event_code}), do: event_code
@@ -165,19 +209,16 @@ defmodule Harald.Spec.Helpers do
       Enum.reduce(parameters, acc, fn parameter,
                                       {acc_keys, acc_bin_pieces, acc_size, acc_gen_clauses,
                                        acc_gen_body} ->
-        size = add(parameter.size, acc_size)
-
         case parameter.type do
           :arrayed_data ->
-            {keys, bin_pieces, size, gen_clauses, gen_body} =
-              process_parameters(parameter.parameters)
+            processed_parameter = process_parameters(parameter.parameters)
 
             {
-              keys ++ acc_keys,
-              bin_pieces ++ acc_bin_pieces,
-              size,
-              gen_clauses ++ acc_gen_clauses,
-              gen_body ++ acc_gen_body
+              processed_parameter.keys ++ acc_keys,
+              acc_bin_pieces ++ processed_parameter.bin_pieces,
+              add(processed_parameter.size, acc_size),
+              acc_gen_clauses ++ processed_parameter.gen_clauses,
+              processed_parameter.gen_body ++ acc_gen_body
             }
 
           _ ->
@@ -185,9 +226,9 @@ defmodule Harald.Spec.Helpers do
 
             {
               [processed_parameter.key | acc_keys],
-              [processed_parameter.bin_piece | acc_bin_pieces],
-              processed_parameter.size,
-              [processed_parameter.gen_clause | acc_gen_clauses],
+              acc_bin_pieces ++ [processed_parameter.bin_piece],
+              add(processed_parameter.size, acc_size),
+              acc_gen_clauses ++ [processed_parameter.gen_clause],
               [processed_parameter.gen_body | acc_gen_body]
             }
         end
@@ -195,7 +236,7 @@ defmodule Harald.Spec.Helpers do
 
     %{
       keys: keys,
-      bin_pieces: Enum.reverse(bin_pieces),
+      bin_pieces: bin_pieces,
       size: size,
       gen_clauses: gen_clauses,
       gen_body: gen_body
@@ -208,12 +249,14 @@ defmodule Harald.Spec.Helpers do
       bin_piece: bin_piece(parameter),
       size: parameter.size,
       gen_clause: gen_clause(parameter),
-      gen_body: {parameter.name, [], Elixir}
+      gen_body: gen_body(parameter)
     }
   end
 
   defp add(x, y) when is_integer(x) and is_integer(y), do: x + y
 
+  defp add(x, y) when is_atom(x), do: add({x, [], Elixir}, y)
+  defp add(x, y) when is_atom(y), do: add(x, {y, [], Elixir})
   defp add(x, y), do: {:+, [context: Elixir, import: Kernel], [x, y]}
 
   defp bin_piece(%{size: size} = parameters) when is_atom(size) do
@@ -221,9 +264,7 @@ defmodule Harald.Spec.Helpers do
   end
 
   defp bin_piece(%{value: value}), do: value
-
   defp bin_piece(%{name: name, size: size, type: type}), do: bin_piece(name, size, type)
-
   defp bin_piece(literal), do: literal
 
   defp bin_piece(name, size, type) when type in [:op_code, :parameters] do
@@ -238,17 +279,21 @@ defmodule Harald.Spec.Helpers do
     {name, [], Elixir}
   end
 
-  defp key(%{name: name, value: value}), do: {name, {value, [], Elixir}}
-
+  defp key(%{name: name, value: value}), do: {name, value}
   defp key(%{name: name}), do: {name, {name, [], Elixir}}
+
+  defp gen_body(%{value: value}), do: value
+  defp gen_body(parameter), do: {:"::", [], [{parameter.name, [], Elixir}, {:binary, [], Elixir}]}
 
   defp gen_clause(%{value: _}), do: []
 
   defp gen_clause(%{name: name, size: size}) do
+    size = if is_atom(size), do: {size, [], Elixir}, else: size
+
     {:<-, [],
      [
        {name, [], Elixir},
-       {{:., [], [{:__aliases__, [alias: false], [:StreamData]}, :binary]}, [], [[length: size]]}
+       quote(do: StreamData.binary(length: unquote(div(size, 8))))
      ]}
   end
 end

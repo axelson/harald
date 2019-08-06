@@ -69,7 +69,7 @@ defmodule Harald.Transport.UART.FramingTest do
 
     property "returns when receiving a complete binary of packets" do
       check all(
-              packets <- StreamData.list_of(Generators.HCI.packet()),
+              packets <- StreamData.list_of(Generators.HCI.generate(:event)),
               binary = Enum.join(packets)
             ) do
         assert {:ok, ^packets, %{frame: "", remaining_bytes: nil}} =
@@ -79,7 +79,7 @@ defmodule Harald.Transport.UART.FramingTest do
 
     property "returns when receiving a binary of packets that will end in_frame" do
       check all(
-              [head | tail] <- StreamData.list_of(Generators.HCI.packet(), length: 1),
+              [head | tail] <- StreamData.list_of(Generators.HCI.generate(:event), length: 1),
               packets = Enum.join(tail),
               head_length = byte_size(head),
               partial_length <- StreamData.integer(1..(head_length - 1)),

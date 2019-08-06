@@ -6,7 +6,7 @@ defmodule Harald.HCI do
   Reference: Version 5.0, Vol. 2, Part E, 1
   """
 
-  alias Harald.{HCI.Event, Serializable}
+  alias Harald.Serializable
   require Harald.Spec, as: Spec
 
   @behaviour Serializable
@@ -40,20 +40,27 @@ defmodule Harald.HCI do
   """
   @type opcode :: binary()
 
+  @typedoc """
+  A two-tuple representation of an opcode.
+  """
+  @type opcode_tuple :: {ogf(), ocf()}
+
   @type opt :: boolean() | binary()
   @type opts :: binary() | [opt()]
 
-  @spec opcode(ogf(), ocf()) :: opcode()
-  def opcode(ogf, ocf) do
+  @doc """
+  Convert between `t:opcode/0` and `t:opcode_tuple/0`.
+  """
+  @spec opcode(opcode()) :: opcode_tuple()
+  @spec opcode(opcode_tuple()) :: opcode()
+  def opcode({ogf, ocf}) do
     <<opcode::size(16)>> = <<ogf::size(6), ocf::size(10)>>
     <<opcode::little-size(16)>>
   end
 
   def opcode(<<opcode::little-size(16)>>) do
-    case <<opcode::size(16)>> do
-      <<ogf::size(6), ocf::size(10)>> -> {:ok, {ogf, ocf}}
-      _ -> :error
-    end
+    <<ogf::size(6), ocf::size(10)>> = <<opcode::size(16)>>
+    {ogf, ocf}
   end
 
   Spec.define_serializers()

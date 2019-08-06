@@ -3,7 +3,8 @@ defmodule Harald.Spec do
   Entry point to generate function clauses to serialize Bluetooth HCI data.
   """
 
-  alias Harald.{HCI, HCI.Event, Spec.Helpers}
+  alias Harald.{HCI, HCI.Event}
+  require Harald.Spec.Helpers, as: Helpers
 
   @type t :: %{
           commands: %{required(HCI.ogf()) => %{required(HCI.ocf()) => command()}},
@@ -32,6 +33,9 @@ defmodule Harald.Spec do
   @callback deserialize(binary()) :: {:ok, map()} | {:error, binary() | map()}
   @callback serialize(map()) :: {:ok, binary()} | :error
 
+  @doc """
+  Returns the processed Bluetooth spec.
+  """
   def get_processed() do
     case GenServer.whereis(unquote(__MODULE__)) do
       nil ->
@@ -45,15 +49,9 @@ defmodule Harald.Spec do
     end
   end
 
-  defmacro define_serializers do
-    Helpers.define_serializers(get_processed())
-  end
+  defmacro define_serializers, do: Helpers.define_serializers(get_processed())
 
-  defmacro define_generators do
-    tmp = get_processed()
-    IO.inspect(:hello)
-    Helpers.define_generators(tmp)
-  end
+  defmacro define_generators, do: Helpers.define_generators(get_processed())
 
   defp from_priv(path) do
     :harald

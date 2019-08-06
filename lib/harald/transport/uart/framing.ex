@@ -1,8 +1,8 @@
 defmodule Harald.Transport.UART.Framing do
   @moduledoc """
-  A framer module that defines a frame as a HCI packet.
+  A callback module for `Circuits.UART.Framing`.
 
-  Reference: Version 5.0, Vol 2, Part E, 5.4
+  A frame is defined as a HCI packet.
   """
 
   alias Circuits.UART.Framing
@@ -32,7 +32,9 @@ defmodule Harald.Transport.UART.Framing do
   def frame_timeout(state), do: {:ok, [state], <<>>}
 
   @impl Framing
-  def remove_framing(new_data, state), do: process_data(new_data, state)
+  def remove_framing(new_data, state) do
+    process_data(new_data, state)
+  end
 
   @doc """
   Returns a tuple like `{remaining_desired_length, part_of_bin, rest_of_bin}`.

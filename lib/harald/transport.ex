@@ -4,7 +4,7 @@ defmodule Harald.Transport do
   """
 
   use GenServer
-  alias Harald.{HCI, LE}
+  alias Harald.HCI
 
   @type adapter_state :: map()
   @type handlers :: [module()]
@@ -42,10 +42,10 @@ defmodule Harald.Transport do
 
   ### Optional
 
-    - `:handle_start` - `t::handle_start()`. A callback immediately after the transport starts,
+    - `:handle_start` - `t:handle_start()`. A callback immediately after the transport starts,
       the callback shall return a `handle_start_ret()`. The returned HCI commands are executed
       immediately. Default `nil`.
-    - `:handlers` - `handlers()`. Modules in addition to `LE` that will handle Bluetooth events.
+    - `:handlers` - `handlers()`. Modules that will handle Bluetooth events.
       Default `[]`.
   """
   @spec start_link(keyword()) :: GenServer.server()
@@ -66,7 +66,7 @@ defmodule Harald.Transport do
   def init(args) do
     {adapter, adapter_opts} = args[:adapter]
     {:ok, adapter_state} = apply(adapter, :setup, [self(), adapter_opts])
-    handlers = [LE | Keyword.get(args, :handlers, [])]
+    handlers = Keyword.get(args, :handlers, [])
     namespace = Keyword.fetch!(args, :namespace)
     handler_pids = setup_handlers(handlers, namespace)
 
@@ -157,8 +157,6 @@ defmodule Harald.Transport do
     end
   end
 
-  defp name(namespace), do: String.to_atom("#{namespace}.#{__MODULE__}")
-
   defp notify_handlers({:ok, events}, handlers) when is_list(events) do
     for e <- events do
       for h <- handlers do
@@ -172,4 +170,6 @@ defmodule Harald.Transport do
   defp notify_handlers({:error, _} = error, handlers) do
     notify_handlers({:ok, [error]}, handlers)
   end
+
+  defp name(namespace), do: String.to_atom("#{__MODULE__}.namespace.#{namespace}")
 end
