@@ -4,19 +4,23 @@ defmodule Harald.Transport do
   """
 
   use GenServer
-  alias Harald.HCI
+  alias Harald.{HCI, Transport.UART}
 
-  @type adapter_state :: map()
+  @typedoc """
+  A list of `t:module()`s that implement the `Harald.Transport.Handler` behaviour. These modules
+  will process Bluetooth events.
+  """
   @type handlers :: [module()]
-  @type namespace :: atom()
 
   @typedoc """
   A callback specification for the `:handle_start` option of `start_link/1`.
+
+  Accepts a MFA or a function, but in either case they shouold return a `t:handle_start_ret()`.
   """
   @type handle_start :: {module(), atom(), list()} | (() -> handle_start_ret()) | nil
 
   @typedoc """
-  The return value of a `handle_start()`.
+  The return value of a `handle_start/0`.
   """
   @type handle_start_ret :: {:ok, [HCI.command()]}
 
@@ -25,11 +29,15 @@ defmodule Harald.Transport do
   """
   @type handler_msg :: {:bluetooth_event, HCI.event()}
 
-  defmodule State do
-    @moduledoc false
-    @enforce_keys [:adapter, :adapter_state, :handlers, :namespace]
-    defstruct @enforce_keys
-  end
+  @typedoc """
+  The `args` in `start_link/1`.
+  """
+  @type start_link_args :: %{
+          device: String.t(),
+          namespace: Harald.namespace(),
+          handle_start: handle_start(),
+          handlers: handlers()
+        }
 
   @doc """
   Start the transport.
@@ -38,66 +46,41 @@ defmodule Harald.Transport do
 
   ### Required
 
-    - `:namespace` - `namespace()`. Used to reference an instance of `Harald`.
+    - `:namespace`, `t:namespace()`. Used to reference an instance of `Harald`.
 
   ### Optional
 
-    - `:handle_start` - `t:handle_start()`. A callback immediately after the transport starts,
-      the callback shall return a `handle_start_ret()`. The returned HCI commands are executed
-      immediately. Default `nil`.
-    - `:handlers` - `handlers()`. Modules that will handle Bluetooth events.
-      Default `[]`.
+    - `:adapter` - `t:adapter()`, `%{args: %{namespace: namespace}, module:
+      Harald.Transport.UART}`. Defines the adapter module and the args it will receive.
+    - `:handle_start` - `t:handle_start()`, `nil`. A callback immediately after the transport
+      starts, the callback shall return a `handle_start_ret()`. The returned HCI commands are
+      executed immediately.
+    - `:handlers`, `t:handlers()`, [] - A list of `t:module()`s that implement the
+      `Harald.Transport.Handler` behaviour. These modules will process Bluetooth events.
   """
-  @spec start_link(keyword()) :: GenServer.server()
-  def start_link(args) do
-    unless Keyword.has_key?(args, :namespace) do
-      raise "namespace is required"
-    end
+  @spec start_link(start_link_args()) :: GenServer.server()
+  def start_link(%{device: _, namespace: namespace} = args) do
+    args =
+      DeepMerge.deep_merge(
+        %{
+          adapter: %{args: %{namespace: namespace}, module: UART},
+          handle_start: nil,
+          handlers: []
+        },
+        args
+      )
 
-    name =
-      args
-      |> Keyword.fetch!(:namespace)
-      |> name()
-
-    GenServer.start_link(__MODULE__, args, name: name)
-  end
-
-  @impl GenServer
-  def init(args) do
-    {adapter, adapter_opts} = args[:adapter]
-    {:ok, adapter_state} = apply(adapter, :setup, [self(), adapter_opts])
-    handlers = Keyword.get(args, :handlers, [])
-    namespace = Keyword.fetch!(args, :namespace)
-    handler_pids = setup_handlers(handlers, namespace)
-
-    state = %State{
-      adapter: adapter,
-      adapter_state: adapter_state,
-      handlers: handler_pids,
-      namespace: namespace
-    }
-
-    handle_start = Keyword.get(args, :handle_start, nil)
-    {:ok, state, {:continue, handle_start}}
+    GenServer.start_link(__MODULE__, args, name: name(namespace))
   end
 
   @doc """
   Send a binary to the Bluetooth controller.
   """
-  @spec send_binary(namespace, HCI.command()) :: any()
+  @spec send_binary(Harald.namespace(), HCI.command()) :: any()
   def send_binary(namespace, bin) when is_atom(namespace) and is_binary(bin) do
     namespace
     |> name()
     |> GenServer.call({:send_binary, bin})
-  end
-
-  @impl GenServer
-  def handle_continue(nil, state), do: {:noreply, state}
-
-  def handle_continue(handle_start, state) do
-    {:ok, hci_commands} = execute_handle_start(handle_start)
-    adapter_state = send_binaries(hci_commands, state.adapter, state.adapter_state)
-    {:noreply, %State{state | adapter_state: adapter_state}}
   end
 
   @doc """
@@ -111,6 +94,33 @@ defmodule Harald.Transport do
     |> GenServer.call({:add_handler, pid})
   end
 
+  @doc false
+  def name(namespace), do: String.to_atom("#{__MODULE__}.namespace.#{namespace}")
+
+  @impl GenServer
+  def init(%{adapter: adapter, namespace: namespace} = args) do
+    adapter_args = Map.merge(%{parent_pid: self(), device: args.device}, adapter.args)
+    {:ok, adapter_state} = adapter.module.start_link(adapter_args)
+    handler_pids = setup_handlers(args.handlers, namespace)
+
+    state = %{
+      adapter: Map.put(adapter, :state, adapter_state),
+      handlers: handler_pids,
+      namespace: namespace
+    }
+
+    {:ok, state, {:continue, args.handle_start}}
+  end
+
+  @impl GenServer
+  def handle_continue(nil, state), do: {:noreply, state}
+
+  def handle_continue(handle_start, %{adapter: adapter} = state) do
+    {:ok, hci_commands} = execute_handle_start(handle_start)
+    adapter_state = send_binaries(hci_commands, adapter.module, adapter.state)
+    {:noreply, %{state | adapter: %{adapter | state: adapter_state}}}
+  end
+
   @impl GenServer
   def handle_info({:transport_adapter, msg}, %{handlers: handlers} = state) do
     _ =
@@ -122,30 +132,25 @@ defmodule Harald.Transport do
   end
 
   @impl GenServer
-  def handle_call(
-        {:send_binary, bin},
-        _from,
-        %State{adapter: adapter, adapter_state: adapter_state} = state
-      ) do
-    {:ok, adapter_state} = adapter.send_binary(bin, adapter_state)
-    {:reply, :ok, %State{state | adapter_state: adapter_state}}
+  def handle_call({:send_binary, bin}, _from, %{adapter: adapter} = state) do
+    {:ok, adapter_state} = adapter.module.send_binary(bin, adapter.state)
+    {:reply, :ok, %{state | adapter: %{adapter | state: adapter_state}}}
   end
 
-  @impl GenServer
   def handle_call({:add_handler, pid}, _from, state) do
-    {:reply, :ok, %State{state | handlers: [pid | state.handlers]}}
+    {:reply, :ok, %{state | handlers: [pid | state.handlers]}}
   end
 
   defp setup_handlers(handlers, namespace) do
     for h <- handlers do
-      {:ok, pid} = apply(h, :setup, [[namespace: namespace]])
+      {:ok, pid} = h.setup(namespace: namespace)
       pid
     end
   end
 
-  defp send_binaries(binaries, adapter, adapter_state) do
+  defp send_binaries(binaries, adapter_module, adapter_state) do
     Enum.reduce(binaries, adapter_state, fn bin, adapter_state ->
-      {:ok, adapter_state} = adapter.send_binary(bin, adapter_state)
+      {:ok, adapter_state} = adapter_module.send_binary(bin, adapter_state)
       adapter_state
     end)
   end
@@ -170,6 +175,4 @@ defmodule Harald.Transport do
   defp notify_handlers({:error, _} = error, handlers) do
     notify_handlers({:ok, [error]}, handlers)
   end
-
-  defp name(namespace), do: String.to_atom("#{__MODULE__}.namespace.#{namespace}")
 end

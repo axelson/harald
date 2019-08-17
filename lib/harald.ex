@@ -5,9 +5,21 @@ defmodule Harald do
   Bluetooth is exceptionally configurable and there are many ways to achieve similar outcomes. As
   such, leverage this module if convenient, otherwise interact with a `Harald.Transport` directly
   to send commands and react to events exactly as required to achieve the desired outcome.
+
+  ## Initializing Harald
+
+  Add `{Harald, args}` to a Supervisor's children. See `child_spec/1` for more info about `args`.
   """
 
-  alias Harald.{HCI, Server}
+  alias Harald.{HCI, Server, Transport}
+
+  @type namespace :: atom()
+
+  @type child_spec_args :: %{
+          optional(:handle_start) => Transport.handle_start(),
+          optional(:handlers) => Transport.handlers(),
+          required(:namespace) => namespace()
+        }
 
   @typedoc """
   A request is considered eroneous in these cases:
@@ -15,7 +27,7 @@ defmodule Harald do
   - `:setup_incomplete` - The underlying `Harald.Transport` has not yet completed setting up the
     Bluetooth Controller.
   - `:already_scanning` - There is already a scan in progress.
-  - `:command_complete_timeout` - A Command Complete event is not received in a timely fashion.
+  - `:command_complete_timeout` - A Command Complete event is not received in time.
   - A Command Complete event itself is the error reason when it includes a status parameter that
     could indicate success, but something other than success is indicated.
   """
@@ -28,9 +40,16 @@ defmodule Harald do
 
   @doc """
   Child specification that delegates to `Harald.Server`.
+
+  ## Args
+
+  ### Required
+
+  `:namespace` - Uniquely identifies a particular instance of Harald.
   """
-  def child_spec(%{} = args) do
-    %{id: args.namespace, start: {Server, :start_link, args}}
+  @spec child_spec(child_spec_args()) :: Supervisor.child_spec()
+  def child_spec(%{namespace: namespace} = args) do
+    %{id: namespace, start: {Server, :start_link, [args]}}
   end
 
   @typedoc """
@@ -47,15 +66,17 @@ defmodule Harald do
 
   ## Options
 
+  - `:command_complete_timeout`, `t::pos_integer()`, `1_000` - The time in milliseconds after
+    starting the scan that the scan should be stopped. The default choosen is informed by
+    `Version 5.1, Vol 2, Part E, 5.1`.
   - `:duration` - The time in milliseconds after starting the scan that the scan should be
-    stopped.
   """
-  @spec scan(Server.namespace(), scan_opts()) :: {:ok, []} | error()
+  @spec scan(Transport.namespace(), scan_opts()) :: {:ok, []} | error()
   def scan(namespace, opts \\ []) do
     args =
       opts
-      |> Enum.into(%{duration: 5_000})
-      |> Map.take([:duration])
+      |> Enum.into(%{duration: 5_000, command_complete_timeout: 1_000})
+      |> Map.take([:duration, :command_complete_timeout])
 
     timeout = args.duration + 5_000
     Server.call(namespace, {:scan, args}, timeout)

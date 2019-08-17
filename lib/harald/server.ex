@@ -2,25 +2,12 @@ defmodule Harald.Server do
   @moduledoc """
   Safely manages the lifecycle of and interaction with a `Harald.Transport`.
 
-  See `Harald.child_spec/1`.
-
-  Users of Harald will typically execute functionality by calling functions on `Harald`. This
-  module allows for
-
-  - messages to be received from a `Harald.Transport` process
-  - state to be accumulated
-
-  transparently to the users of Harald.
+  This module should not be interacted with directly, rather, leverage `Harald`.
   """
 
   use GenServer
   alias Harald.{HCI, Transport}
   require Harald.Log, as: Log
-
-  @typedoc """
-  An atom identifier to namespace `Harald.Server`s.
-  """
-  @type namespace :: atom()
 
   @doc false
   def child_spec(_) do
@@ -35,13 +22,18 @@ defmodule Harald.Server do
   @impl GenServer
   def init(args) do
     {:ok, pid} = Transport.start_link(args)
-    Log.debug("transport started", %{pid: pid})
-    {:ok, %{scan_from: nil, reports: %{}, namespace: args.namespace}}
+    Log.debug("transport started", %{pid: "#{inspect(pid)}"})
+
+    state = %{
+      namespace: args.namespace,
+      reports: %{},
+      scan_from: nil
+    }
+
+    {:ok, state}
   end
 
-  @doc """
-  Makes a synchronous call to the `Harald.Server` identified by `namespace`.
-  """
+  @doc false
   def call(namespace, request, timeout) do
     namespace
     |> name()
@@ -49,31 +41,32 @@ defmodule Harald.Server do
   end
 
   @impl GenServer
-  def handle_call({:scan, args}, from, %{from: nil} = state) do
-    bin =
+  def handle_call({:scan, args}, from, %{scan_from: nil} = state) do
+    {:ok, bin} =
       HCI.serialize(%{
         command: :hci_le_set_scan_enable,
-        le_scan_enable: true,
-        filter_duplicates: false
+        le_scan_enable: 1,
+        filter_duplicates: 0
       })
 
-    :ok = Transport.send_binary(state.ns, bin)
-    Process.send_after(self(), :stop_scan, args.duration)
-    {:noreply, %{state | from: from}}
+    :ok = Transport.send_binary(state.namespace, bin)
+    Process.send_after(self(), {:scan_stop, args}, args.duration)
+    {:noreply, %{state | scan_from: from}}
   end
 
   def handle_call({:scan, _}, _, state), do: {:reply, {:error, :already_scanning}, state}
 
   @impl GenServer
-  def handle_info(:stop_scan, state) do
-    bin =
+  def handle_info({:scan_stop, args}, state) do
+    {:ok, bin} =
       HCI.serialize(%{
         command: :hci_le_set_scan_enable,
-        le_scan_enable: false,
-        filter_duplicates: false
+        le_scan_enable: 0,
+        filter_duplicates: 0
       })
 
-    :ok = Transport.send_binary(state.ns, bin)
+    :ok = Transport.send_binary(state.namespace, bin)
+    Process.send_after(self(), :command_complete, args.command_complete_timeout)
     {:noreply, state}
   end
 
@@ -98,8 +91,8 @@ defmodule Harald.Server do
          %{event: :hci_command_complete, return_parameters: %{status: "Success"}}},
         state
       ) do
-    GenServer.reply(state.from, state.devices)
-    {:noreply, %{state | devices: %{}, from: nil}}
+    GenServer.reply(state.scan_from, state.devices)
+    {:noreply, %{state | devices: %{}, scan_from: nil}}
   end
 
   def handle_info({:bluetooth_event, unhandled_bluetooth_event}, state) do

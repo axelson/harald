@@ -73,11 +73,16 @@ defmodule Harald.Transport.UART.Framing do
 
   # HCI ACL Data Packet
   defp process_data(
-         <<2, _::size(16), length::size(16)>> <> data,
+         <<2, handle::little-size(12), flags::size(4), length::little-size(16)>> <> data,
          %State{frame: <<>>} = state,
          messages
        ) do
-    process_data(data, length, state, messages)
+    process_data(
+      data,
+      length,
+      %{state | frame: <<2, handle::little-size(12), flags::size(4), length::little-size(16)>>},
+      messages
+    )
   end
 
   # HCI Synchronous Data Packet
