@@ -4,7 +4,6 @@ defmodule Harald.Spec do
   """
 
   alias Harald.{HCI, HCI.Event, Spec.Parser}
-  require Harald.Spec.Generator, as: Generator
 
   @type t :: %{
           commands: %{required(HCI.ogf()) => %{required(HCI.ocf()) => command()}},
@@ -49,9 +48,20 @@ defmodule Harald.Spec do
     end
   end
 
-  defmacro define_serializers, do: Generator.define_serializers(get_processed())
+  defmacro define_serializers do
+    get_processed().ast_maps
+    |> Enum.map(fn ast_map -> ast_map.serializers end)
+  end
 
-  defmacro define_generators, do: Generator.define_generators(get_processed())
+  defmacro define_deserializers do
+    get_processed().ast_maps
+    |> Enum.map(fn ast_map -> ast_map.deserializers end)
+  end
+
+  defmacro define_generators do
+    get_processed().ast_maps
+    |> Enum.map(fn ast_map -> ast_map.generators end)
+  end
 
   defp from_priv(path) do
     :harald
@@ -59,7 +69,6 @@ defmodule Harald.Spec do
     |> Path.join(path)
     |> Code.eval_file()
     |> elem(0)
-    |> atomize()
   end
 
   # recursively walks an enumerable looking for binaries to downcase into atoms

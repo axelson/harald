@@ -64,4 +64,6 @@ defmodule Harald.HCI do
   end
 
   Spec.define_serializers()
+
+  Spec.define_deserializers()
 end

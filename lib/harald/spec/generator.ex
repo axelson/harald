@@ -1,52 +1,60 @@
 defmodule Harald.Spec.Generator do
   use ExUnitProperties
-  @doc false
-  def define_generators(spec) do
-    %{ast: core_ast, commands: commands, events: events} = core_generators(spec.gen_maps)
-    %{ast: extra_ast} = extra_generators(commands, events)
 
-    core_ast ++ extra_ast
-  end
+  @external_resource :code.priv_dir(:harald) |> Path.join("core_v5_1.exs")
 
-  @doc false
-  def define_serializers(spec) do
-    Enum.reduce(spec.gen_maps, [], fn
-      {:events, value}, acc ->
-        Enum.reduce(value, acc, fn
-          %{
-            bin_body: bin_body,
-            bin_pattern: bin_pattern,
-            parameters: parameters
-          },
-          acc ->
-            ast =
-              quote location: :keep, generated: true do
-                def serialize(unquote(parameters)) do
-                  {:ok, unquote(bin_body)}
-                end
+  # @doc false
+  # def define_serializers(spec) do
+  #   Enum.reduce(spec.serializers, [], fn
+  #     {section, value}, acc when section in [:commands, :events] ->
+  #       Enum.reduce(value, acc, fn
+  #         %{
+  #           bin_body: bin_body,
+  #           bin_pattern: bin_pattern,
+  #           ser_map: ser_map,
+  #           des_map: des_map,
+  #           transforms: transform
+  #         },
+  #         acc ->
+  #           ast =
+  #             quote location: :keep, generated: true do
+  #               def serialize(unquote(ser_map)) do
+  #                 unquote_splicing(transform)
+  #                 {:ok, unquote(bin_body)}
+  #               end
 
-                def serialize(x), do: {:error, x}
+  #               def deserialize(unquote(bin_pattern)) do
+  #                 unquote_splicing(transform)
+  #                 {:ok, unquote(des_map)}
+  #               end
+  #             end
 
-                def deserialize(unquote(bin_pattern)) do
-                  {:ok, unquote(parameters)}
-                end
+  #           require Logger
+  #           Logger.info(Macro.to_string(ast))
 
-                def deserialize(x), do: {:error, x}
-              end
+  #           acc ++ [ast]
+  #       end)
 
-            acc ++ [ast]
-        end)
+  #     _, acc ->
+  #       acc
+  #   end)
+  #   |> Enum.concat([
+  #     quote do
+  #       def serialize(x), do: {:error, x}
+  #       def deserialize(x), do: {:error, x}
+  #     end
+  #   ])
+  # end
 
-      _, acc ->
-        acc
-    end)
-  end
+  # defp core_generators(spec) do
+  #   Enum.reduce(spec, %{ast: [], command_returns: [], commands: [], events: [], packets: []}, fn
+  #     {:command_returns = section, sub_spec}, acc ->
+  #       generator_ast(section, sub_spec, acc)
 
-  defp core_generators(spec) do
-    Enum.reduce(spec, %{ast: [], commands: [], events: [], packets: []}, fn
-      {section, sub_spec}, acc -> generator_ast(section, sub_spec, acc)
-    end)
-  end
+  #     {section, sub_spec}, acc ->
+  #       generator_ast(section, sub_spec, acc)
+  #   end)
+  # end
 
   # defp acl_data_generators do
   #   quote do
@@ -119,8 +127,6 @@ defmodule Harald.Spec.Generator do
               end
             end
           end
-
-        IO.inspect(Macro.to_string(ast), pretty: true)
 
         %{
           acc

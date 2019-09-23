@@ -1,7 +1,6 @@
 defmodule Harald.Transport.UART.FramingTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
-  alias Harald.Generators
   alias Harald.Transport.UART.Framing
   alias Harald.Transport.UART.Framing.State
 
@@ -67,39 +66,39 @@ defmodule Harald.Transport.UART.FramingTest do
       end
     end
 
-    property "returns when receiving complete event(s)" do
-      check all(
-              packets <- list_of(Generators.HCI.generate(:event)),
-              binary = Enum.join(packets)
-            ) do
-        assert {:ok, ^packets, %{frame: "", remaining_bytes: nil}} =
-                 Framing.remove_framing(binary, %State{})
-      end
-    end
+    # property "returns when receiving complete event(s)" do
+    #   check all(
+    #           packets <- list_of(Generators.HCI.generate(:event)),
+    #           binary = Enum.join(packets)
+    #         ) do
+    #     assert {:ok, ^packets, %{frame: "", remaining_bytes: nil}} =
+    #              Framing.remove_framing(binary, %State{})
+    #   end
+    # end
 
-    property "returns when receiving event(s) that will end in_frame" do
-      check all(
-              [head | tail] <- list_of(Generators.HCI.generate(:event), length: 1),
-              packets = Enum.join(tail),
-              head_length = byte_size(head),
-              partial_length <- integer(1..(head_length - 1)),
-              {0, partial_packet, _} = Framing.binary_split(head, partial_length)
-            ) do
-        # the third byte in event packets is the length
-        remaining_bytes =
-          if partial_length >= 3 do
-            head_length - partial_length
-          else
-            nil
-          end
+    # property "returns when receiving event(s) that will end in_frame" do
+    #   check all(
+    #           [head | tail] <- list_of(Generators.HCI.generate(:event), length: 1),
+    #           packets = Enum.join(tail),
+    #           head_length = byte_size(head),
+    #           partial_length <- integer(1..(head_length - 1)),
+    #           {0, partial_packet, _} = Framing.binary_split(head, partial_length)
+    #         ) do
+    #     # the third byte in event packets is the length
+    #     remaining_bytes =
+    #       if partial_length >= 3 do
+    #         head_length - partial_length
+    #       else
+    #         nil
+    #       end
 
-        assert {:in_frame, tail,
-                %State{
-                  frame: partial_packet,
-                  remaining_bytes: remaining_bytes
-                }} ==
-                 Framing.remove_framing(packets <> partial_packet, %State{})
-      end
-    end
+    #     assert {:in_frame, tail,
+    #             %State{
+    #               frame: partial_packet,
+    #               remaining_bytes: remaining_bytes
+    #             }} ==
+    #              Framing.remove_framing(packets <> partial_packet, %State{})
+    #   end
+    # end
   end
 end
