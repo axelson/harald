@@ -70,48 +70,6 @@
     0x43 => "Limit Reached",
     0x44 => "Operation Cancelled by Host"
   },
-  packets: [
-    # %{
-    #   name: "Command",
-    #   id: 1,
-    #   parameters: [
-    #     %{name: "Op_Code", type: "opcode"},
-    #     %{name: "Parameter_Total_Length", size: 8, values: 0..252},
-    #     %{name: "Parameters", size: "Parameter_Total_Length"}
-    #   ]
-    # },
-    # %{
-    #   name: "ACL Data",
-    #   id: 2,
-    #   parameters: [
-    #     %{name: "Handle", type: "handle"},
-    #     %{name: "Packet_Boundary_Flag", type: "flag"},
-    #     %{name: "Broadcast_Flag", size: 2, values: 0..1},
-    #     %{name: "Data_Total_Length", size: 8 * 2},
-    #     %{name: "Data", size: "Data_Total_Length"}
-    #   ]
-    # },
-    # %{
-    #   name: "Synchronous Data",
-    #   id: 3,
-    #   parameters: [
-    #     %{name: "Connection_Handle", type: "handle"},
-    #     %{name: "Packet_Status_Flag", type: "flag"},
-    #     %{size: 2, type: "rfu"},
-    #     %{name: "Data_Total_Length"},
-    #     %{name: "Data", size: "Data_Total_Length"}
-    #   ]
-    # },
-    # %{
-    #   name: "Event",
-    #   id: 4,
-    #   parameters: [
-    #     %{name: "Event_Code"},
-    #     %{name: "Parameter_Total_Length"},
-    #     %{name: "Parameters", size: "Parameter_Total_Length"}
-    #   ]
-    # }
-  ],
   command_groups: [
     %{
       id: 3,
@@ -126,21 +84,21 @@
           ]
         }
       ]
+    },
+    %{
+      id: 8,
+      commands: [
+        %{
+          name: "HCI_LE_Set_Scan_Enable",
+          id: 12,
+          parameters: [
+            %{name: "LE_Scan_Enable", size: 8, type: :boolean},
+            %{name: "Filter_Duplicates", size: 8, type: :boolean}
+          ],
+          return: [%{name: "Status", type: :error_code}]
+        }
+      ]
     }
-    # %{
-    #   id: 8,
-    #   commands: [
-    #     %{
-    #       name: "HCI_LE_Set_Scan_Enable",
-    #       id: 12,
-    #       parameters: [
-    #         %{name: "LE_Scan_Enable", size: 8, type: :boolean},
-    #         %{name: "Filter_Duplicates", size: 8, type: :boolean}
-    #       ],
-    #       return: [%{name: "Status", type: :error_code}]
-    #     }
-    #   ]
-    # }
   ],
   events: [
     %{
@@ -148,34 +106,34 @@
       id: 14,
       parameters: [
         %{name: "Num_HCI_Command_Packets"},
-        %{name: "Command_Opcode", type: {:branch, :opcode}},
+        %{name: "Command_Opcode", type: :opcode},
         %{name: "Return_Parameter(s)", type: :command_return}
       ]
+    },
+    %{
+      name: "HCI_LE_Meta",
+      id: 62,
+      subevents: [
+        %{
+          name: "HCI_LE_Advertising_Report",
+          parameters: [
+            %{name: "Subevent_Code", type: :subevent_code, value: 2},
+            %{name: "Num_Reports", size: 8, type: :integer, values: 1..25},
+            %{
+              name: :reports,
+              parameters: [
+                %{name: "Event_Type", size: 8, type: :advertising_pdu},
+                %{name: "Address_Type", size: 8, type: :integer},
+                %{name: "Address", size: 8 * 6, type: :integer},
+                %{name: "Length_Data", size: 8, type: :integer},
+                %{name: "Data", size: "Length_Data", type: :binary},
+                %{name: "RSS", size: 8, type: :integer}
+              ],
+              type: :arrayed_data
+            }
+          ]
+        }
+      ]
     }
-    # %{
-    #   name: "HCI_LE_Meta",
-    #   id: 62,
-    #   subevents: [
-    #     %{
-    #       event: "HCI_LE_Advertising_Report",
-    #       parameters: [
-    #         %{name: "Subevent_Code", value: 2},
-    #         %{name: "Num_Reports", size: 8, type: :integer},
-    #         %{
-    #           multiplier: "Num_Reports",
-    #           parameters: [
-    #             %{name: "Event_Type", size: 8, type: :advertising_pdu},
-    #             %{name: "Address_Type", size: 8, type: :integer},
-    #             %{name: "Address", size: 8 * 6, type: :integer},
-    #             %{name: "Length_Data", size: 8, type: :integer},
-    #             %{name: "Data", size: "Length_Data", type: :binary},
-    #             %{name: "RSS", size: 8, type: :integer}
-    #           ],
-    #           type: :arrayed_data
-    #         }
-    #       ]
-    #     }
-    #   ]
-    # }
   ]
 ]

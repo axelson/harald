@@ -51,17 +51,28 @@ defmodule Harald.HCI do
   @doc """
   Convert between `t:opcode/0` and `t:opcode_tuple/0`.
   """
-  @spec opcode(opcode()) :: opcode_tuple()
-  @spec opcode(opcode_tuple()) :: opcode()
-  def opcode({ogf, ocf}) do
-    <<opcode::size(16)>> = <<ogf::size(6), ocf::size(10)>>
-    <<opcode::little-size(16)>>
-  end
+  # @spec opcode(opcode()) :: opcode_tuple()
+  # @spec opcode(opcode_tuple()) :: opcode()
+  # def opcode({ogf, ocf}) do
+  #   <<opcode::size(16)>> = <<ogf::size(6), ocf::size(10)>>
+  #   <<opcode::little-size(16)>>
+  # end
 
-  def opcode(<<opcode::little-size(16)>>) do
-    <<ogf::size(6), ocf::size(10)>> = <<opcode::size(16)>>
-    {ogf, ocf}
-  end
+  # def opcode(<<opcode::little-size(16)>>) do
+  #   <<ogf::size(6), ocf::size(10)>> = <<opcode::size(16)>>
+  #   {ogf, ocf}
+  # end
+
+  # def opcode(integer) do
+  #   <<ogf::size(6), ocf::size(10)>> = <<integer::size(16)>>
+  #   {ogf, ocf}
+  # end
+
+  def serialize({:boolean, 0}), do: false
+
+  def serialize({:boolean, 1}), do: true
+
+  Spec.define_helpers()
 
   Spec.define_serializers()
 

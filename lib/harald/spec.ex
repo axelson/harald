@@ -48,6 +48,10 @@ defmodule Harald.Spec do
     end
   end
 
+  defmacro define_helpers do
+    get_processed().helpers
+  end
+
   defmacro define_serializers do
     get_processed().ast_maps
     |> Enum.map(fn ast_map -> ast_map.serializers end)
